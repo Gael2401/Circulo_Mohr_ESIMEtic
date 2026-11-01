@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Círculo de Mohr  -  3AM1</title>
+<style>
+
+:root{
+  --fondo:#0f1115; --panel:#1b1f27; --lienzo:#0a0c10;
+  --texto:#e6e8ec; --suave:#8b93a1; --rejilla:#262b35;
+  --circulo:#3b82f6; --puntoX:#ef4444; --puntoY:#22c55e;
+  --centro:#fbbf24; --angulo:#f59e0b; --tau:#c084fc;
+}
+*{box-sizing:border-box}
+body{margin:0;padding:16px;background:var(--fondo);color:var(--texto);font-family:system-ui,Segoe UI,sans-serif}
+main{max-width:920px;margin:auto;display:grid;gap:12px}
+h1{font-size:1.35rem;margin:0 0 2px}
+.panel{background:var(--panel);border-radius:5px;padding:14px}
+canvas{width:100%;height:440px;display:block;background:var(--lienzo);border-radius:5px}
+.resultados{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;text-align:center}
+.resultados small{display:block;color:var(--suave);font-size:.78rem}
+.resultados b{font-size:1.05rem}
+.control{display:grid;grid-template-columns:170px 1fr 100px;align-items:center;gap:12px;margin-bottom:12px}
+.control label{font-size:.92rem}
+input[type=range]{width:100%;accent-color:var(--circulo)}
+input[type=number],select{width:100%;padding:6px 8px;background:var(--lienzo);color:var(--texto);border:1px solid #333a47;border-radius:5px;font-size:.95rem}
+@media(max-width:600px){.control{grid-template-columns:1fr 90px}.control input[type=range]{grid-column:1/3}}
+</style>
+</head>
+<body>
+<main>
+  <h1>Simulador del Círculo de Mohr  -  3AM1</h1>
+
+  <canvas id="lienzo"></canvas>
+
+  <section class="panel resultados">
+    <div><small>Esfuerzo principal σ₁</small><b id="r-s1"></b></div>
+    <div><small>Esfuerzo principal σ₂</small><b id="r-s2"></b></div>
+    <div><small>Esfuerzo promedio σ prom</small><b id="r-prom"></b></div>
+    <div><small>Cortante máx. τ máx</small><b id="r-tmax"></b></div>
+    <div><small>Cortante mín. τ mín</small><b id="r-tmin"></b></div>
+    <div><small>Ángulo θp₁</small><b id="r-tp1"></b></div>
+    <div><small>Ángulo θp₂</small><b id="r-tp2"></b></div>
+    <div><small>Ángulo cortante θs</small><b id="r-ts"></b></div>
+  </section>
+
+  <section class="panel">
+    <div class="control">
+      <label for="sx-num">Esfuerzo normal σx</label>
+      <input type="range" id="sx-rng" min="-250" max="250" step="2" value="1">
+      <input type="number" id="sx-num" value="1">
+    </div>
+    <div class="control">
+      <label for="sy-num">Esfuerzo normal σy</label>
+      <input type="range" id="sy-rng" min="-250" max="250" step="2" value="1">
+      <input type="number" id="sy-num" value="1">
+    </div>
+    <div class="control">
+      <label for="txy-num">Esfuerzo cortante τxy</label>
+      <input type="range" id="txy-rng" min="-250" max="250" step="2" value="1">
+      <input type="number" id="txy-num" value="1">
+    </div>
+    <div class="control">
+      <label for="unidad">Unidad de Medida</label>
+      <span></span>
+      <select id="unidad">
+        <option>GPa</option><option>MPa</option><option>kPa</option>
+        <option>Pa</option><option>psi</option><option>ksi</option>
+      </select>
+    </div>
+  </section>
+</main>
+
+<script>
+// ===== 1. REFERENCIAS AL HTML =====
+const lienzo = document.getElementById('lienzo');
+const ctx = lienzo.getContext('2d');
+const selUnidad = document.getElementById('unidad');
+const campos = ['sx', 'sy', 'txy'];
+
+const leer = id => parseFloat(document.getElementById(id + '-num').value) || 0;
+
+// ===== 2. CÁLCULOS =====
+function calcular(sx, sy, txy) {
+  const prom = (sx + sy) / 2;
+  const mitad = (sx - sy) / 2;
+  const R = Math.hypot(mitad, txy);
+  const dosTheta = Math.atan2(txy, mitad);
+  const tp1 = (dosTheta * 180 / Math.PI) / 2;
+  const normal = a => {
+    a %= 180;
+    if (a > 90) a -= 180;
+    if (a <= -90) a += 180;
+    return a;
+  };
+  return {
+    prom, R, dosTheta,
+    s1: prom + R, s2: prom - R,
+    tmax: R, tmin: -R,
+    tp1, tp2: normal(tp1 + 90), ts: normal(tp1 - 45)
+  };
+}
+
+// ===== 3. UTILIDADES =====
+const fmt = n => (Math.abs(n) < 0.005 ? 0 : n).toFixed(2);
+
+function pasoBonito(v) {
+  const p = 10 ** Math.floor(Math.log10(v));
+  const m = v / p;
+  return (m < 2 ? 1 : m < 5 ? 2 : 5) * p;
+}
+
+// ===== 4. DIBUJO =====
+function dibujar() {
+  const sx = leer('sx'), sy = leer('sy'), txy = leer('txy');
+  const u = selUnidad.value;
+  const d = calcular(sx, sy, txy);
+
+  // Ajuste a pantalla (nítido en pantallas retina)
+  const dpr = window.devicePixelRatio || 1;
+  const w = lienzo.clientWidth, h = lienzo.clientHeight;
+  lienzo.width = w * dpr;
+  lienzo.height = h * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  // Escala automática: el círculo siempre cabe en el lienzo
+  const ext = Math.max(Math.abs(d.s1), Math.abs(d.s2), d.R, 1) * 1.4;
+  const k = Math.min(w, h) / 2 / ext;         // píxeles por unidad de esfuerzo
+  const ox = w / 2, oy = h / 2;               // origen (0,0) en el centro
+  const PX = s => ox + s * k;                 // σ  -> píxel x
+  const PY = t => oy + t * k;                 // τ  -> píxel y (τ positivo hacia abajo)
+
+  const linea = (x1, y1, x2, y2, color, ancho = 1, dash = []) => {
+    ctx.beginPath(); ctx.setLineDash(dash); ctx.strokeStyle = color; ctx.lineWidth = ancho;
+    ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.setLineDash([]);
+  };
+  const texto = (t, x, y, color = '#e6e8ec', align = 'left') => {
+    ctx.fillStyle = color; ctx.textAlign = align; ctx.fillText(t, x, y);
+  };
+  const punto = (x, y, color, r = 6) => {
+    ctx.beginPath(); ctx.fillStyle = color; ctx.arc(x, y, r, 0, 2 * Math.PI); ctx.fill();
+  };
+
+  ctx.font = '12px system-ui, sans-serif';
+
+  // Rejilla y números de los ejes
+  const paso = pasoBonito(ext / 4);
+  const nx = Math.floor(w / 2 / k / paso), ny = Math.floor(h / 2 / k / paso);
+  for (let i = -nx; i <= nx; i++) {
+    if (i === 0) continue;
+    linea(PX(i * paso), 0, PX(i * paso), h, '#262b35');
+    texto(i * paso, PX(i * paso), oy + 14, '#8b93a1', 'center');
+  }
+  for (let j = -ny; j <= ny; j++) {
+    if (j === 0) continue;
+    linea(0, PY(j * paso), w, PY(j * paso), '#262b35');
+    texto(j * paso, ox - 6, PY(j * paso) + 4, '#8b93a1', 'right');
+  }
+
+  // Ejes
+  linea(0, oy, w, oy, '#aab', 1.5);
+  linea(ox, 0, ox, h, '#aab', 1.5);
+  texto(`σ (${u})`, w - 8, oy - 8, '#e6e8ec', 'right');
+  texto(`τ (${u}) ↓ positivo`, ox + 8, 16);
+
+  // Círculo
+  const cx = PX(d.prom);
+  ctx.beginPath();
+  ctx.arc(cx, oy, d.R * k, 0, 2 * Math.PI);
+  ctx.fillStyle = 'rgba(59,130,246,0.10)'; ctx.fill();
+  ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 2.5; ctx.stroke();
+
+  // Diámetro X–Y
+  const xX = PX(sx), yX = PY(txy), xY = PX(sy), yY = PY(-txy);
+  linea(xX, yX, xY, yY, '#ef4444', 1.5, [5, 4]);
+
+  // Arco del ángulo 2θp (desde el eje σ₁ hasta el punto X)
+  const ra = Math.max(d.R * k * 0.3, 14);
+  ctx.beginPath();
+  ctx.arc(cx, oy, ra, 0, d.dosTheta, d.dosTheta < 0);
+  ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 2; ctx.stroke();
+  texto('2θp', cx + (ra + 16) * Math.cos(d.dosTheta / 2),
+        oy + (ra + 16) * Math.sin(d.dosTheta / 2) + 4, '#f59e0b', 'center');
+
+  // Puntos principales sobre el eje σ
+  punto(PX(d.s1), oy, '#3b82f6'); texto(`σ₁ = ${fmt(d.s1)}`, PX(d.s1), oy - 12, '#7aa8ff', 'center');
+  punto(PX(d.s2), oy, '#3b82f6'); texto(`σ₂ = ${fmt(d.s2)}`, PX(d.s2), oy - 12, '#7aa8ff', 'center');
+
+  // Cortante máximo y mínimo (τ positivo hacia abajo)
+  punto(cx, PY(d.tmax), '#c084fc'); texto(`τmáx = ${fmt(d.tmax)}`, cx + 10, PY(d.tmax) + 16, '#c084fc');
+  punto(cx, PY(d.tmin), '#c084fc'); texto(`τmín = ${fmt(d.tmin)}`, cx + 10, PY(d.tmin) - 10, '#c084fc');
+
+  // Centro (esfuerzo promedio)
+  punto(cx, oy, '#fbbf24', 5);
+  texto(`σprom = ${fmt(d.prom)}`, cx, oy + 28, '#fbbf24', 'center');
+
+  // Puntos X e Y
+  punto(xX, yX, '#ef4444', 7);
+  texto(`X (${fmt(sx)}, ${fmt(txy)})`, xX + 10, yX - 8, '#fff');
+  punto(xY, yY, '#22c55e', 7);
+  texto(`Y (${fmt(sy)}, ${fmt(-txy)})`, xY + 10, yY - 8, '#fff');
+
+  // Panel de resultados
+  const set = (id, val) => document.getElementById('r-' + id).textContent = val;
+  set('s1', `${fmt(d.s1)} ${u}`);   set('s2', `${fmt(d.s2)} ${u}`);
+  set('prom', `${fmt(d.prom)} ${u}`);
+  set('tmax', `${fmt(d.tmax)} ${u}`); set('tmin', `${fmt(d.tmin)} ${u}`);
+  set('tp1', `${fmt(d.tp1)}°`);     set('tp2', `${fmt(d.tp2)}°`);
+  set('ts', `${fmt(d.ts)}°`);
+}
+
+// ===== 5. EVENTOS: barra y casilla se sincronizan =====
+campos.forEach(id => {
+  const rng = document.getElementById(id + '-rng');
+  const num = document.getElementById(id + '-num');
+  rng.addEventListener('input', () => { num.value = rng.value; dibujar(); });
+  num.addEventListener('input', () => { rng.value = num.value; dibujar(); });
+});
+selUnidad.addEventListener('change', dibujar);
+window.addEventListener('resize', dibujar);
+
+dibujar(); // primer dibujo al cargar
+</script>
+</body>
+</html>
